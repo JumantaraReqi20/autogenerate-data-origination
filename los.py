@@ -221,14 +221,29 @@ class Los:
     def opsi(self, pola: str) -> list[WebElement]:
         return [o for o in self.cari("//*[@role='option']") if re.search(pola, _teks(o), re.I)]
 
+    def klik_opsi(self, pola: str, pesan: str) -> str:
+        """
+        Cari opsi yang cocok lalu klik, dalam SATU percobaan `tunggu`. Daftar opsi autocomplete
+        berbasis API bisa dirender ulang di antara "ditemukan" dan "diklik" (hasil pencarian tiba
+        dua kali), sehingga elemennya basi; percobaan berikutnya mencari ulang dari awal.
+        Mengembalikan label opsi yang diklik.
+        """
+        def cari_lalu_klik():
+            o = next((x for x in self.opsi(pola) if _teks(x)), None)
+            if o is None:
+                return None
+            label = _teks(o)
+            self.klik(o)
+            return label
+
+        return self.tunggu(cari_lalu_klik, 30, pesan)
+
     def pilih_select(self, teks_sekarang: str, pola_opsi: str, induk=None):
         """MUI Select: dikenali dari teks yang sedang tampil (biasanya placeholder)."""
         kotak = self.satu(f".//*[@role='combobox'][contains(normalize-space(), {xp_literal(teks_sekarang)})]",
                           30, induk or self.d, f'dropdown "{teks_sekarang}" tidak ditemukan')
         self.klik(kotak)
-        o = self.tunggu(lambda: (self.opsi(pola_opsi) or [None])[0], 30,
-                        f'opsi "{pola_opsi}" tidak ada di dropdown "{teks_sekarang}"')
-        self.klik(o)
+        self.klik_opsi(pola_opsi, f'opsi "{pola_opsi}" tidak ada di dropdown "{teks_sekarang}"')
         self.tunggu(lambda: not self.cari("//*[@role='listbox']"), 10, 'dropdown tidak tertutup')
         time.sleep(0.3)
 
@@ -238,18 +253,14 @@ class Los:
                           f"/ancestor::div[.//*[@role='combobox']][1]//*[@role='combobox']",
                           30, induk or self.d, f'dropdown berlabel "{label}" tidak ditemukan')
         self.klik(kotak)
-        o = self.tunggu(lambda: (self.opsi(pola_opsi) or [None])[0], 30,
-                        f'opsi "{pola_opsi}" tidak ada di dropdown "{label}"')
-        self.klik(o)
+        self.klik_opsi(pola_opsi, f'opsi "{pola_opsi}" tidak ada di dropdown "{label}"')
         self.tunggu(lambda: not self.cari("//*[@role='listbox']"), 10, 'dropdown tidak tertutup')
         time.sleep(0.5)
 
     def pilih_autocomplete(self, kotak: WebElement, kata: str, pola_opsi: str):
         """MUI Autocomplete berbasis API: ketik kata kunci, tunggu opsi yang cocok, pilih."""
         self.ketik(kotak, kata)
-        o = self.tunggu(lambda: (self.opsi(pola_opsi) or [None])[0], 30,
-                        f'opsi "{pola_opsi}" tidak muncul setelah mengetik "{kata}"')
-        self.klik(o)
+        self.klik_opsi(pola_opsi, f'opsi "{pola_opsi}" tidak muncul setelah mengetik "{kata}"')
         time.sleep(0.5)
 
     def pilih_dari_daftar(self, kotak: WebElement, pola_opsi: str = '') -> str:
@@ -259,10 +270,7 @@ class Los:
         """
         self.tunggu(lambda: kotak.is_enabled(), 30, 'dropdown masih nonaktif')
         self.klik(kotak)
-        o = self.tunggu(lambda: ([x for x in self.opsi(pola_opsi or '.') if _teks(x)] or [None])[0], 30,
-                        f'opsi "{pola_opsi or "(pertama)"}" tidak muncul')
-        label = _teks(o)
-        self.klik(o)
+        label = self.klik_opsi(pola_opsi or '.', f'opsi "{pola_opsi or "(pertama)"}" tidak muncul')
         time.sleep(0.5)
         return label
 
