@@ -1,0 +1,43 @@
+{
+ "base_url": "https://<host-lingkungan-uji>",
+ "akun": {
+  "staff_bisnis": "<username>",
+  "tl_bisnis": "<username>",
+  "kadiv_bisnis": "<username>",
+  "tl_depi": "<username>",
+  "kadiv_depi": "<username>",
+  "tl_dh": "<username>",
+  "kadiv_dh": "<username>"
+ },
+ "data": {
+  "kata_pencarian": "aku",
+  "institution_type": "Perseroan Terbatas",
+  "gam_cari": "<kata kunci GAM>",
+  "gam_opsi": "<regex label opsi GAM>",
+  "jenis_customer": "Swasta",
+  "tipe_proses": "^\\s*(Origination|Fast Track)\\s*$",
+  "tipe_pembiayaan": "Project Financing",
+  "pic2_cari": "<kata kunci PIC2>",
+  "pic2_opsi": "<regex label opsi PIC2>",
+  "analis_cari": "<kata kunci analis>",
+  "analis_opsi": "<regex label opsi analis>",
+  "produk": "Dana Talangan",
+  "syariah": {
+   "segmen": "^\\s*Syariah\\s*$",
+   "skema": "^\\s*Al Musyarakah\\s*$",
+   "tujuan_pembiayaan": "Pembiayaan proyek infrastruktur",
+   "teks_objek": "Objek pembiayaan otomasi"
+  },
+  "komentar_submit": "Bismillaah",
+  "komentar": "test",
+  "staff_depi_cari": "<kata kunci staf DEPI>",
+  "staff_depi_opsi": "<regex label opsi staf DEPI>",
+  "staff_dh_cari": "<kata kunci staf DH>",
+  "staff_dh_opsi": "<regex label opsi staf DH>",
+  "other_document_jumlah": 1,
+  "other_document_kategori": "Document Pembiayaan",
+  "other_document_group": "",
+  "other_document_jenis": "",
+  "other_document_keterangan": "test"
+ }
+}

@@ -1,0 +1,13 @@
+# Konfigurasi berisi base_url, username akun, dan nama staf — dibagikan secara personal.
+config.json
+
+# Jejak run & bukti kegagalan (berisi data run dan isi halaman aplikasi).
+jejak*.json
+artefak/
+
+# Lingkungan Python.
+.venv/
+venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
