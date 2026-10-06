@@ -6,8 +6,9 @@ skenario pembiayaan KONVEN (fasilitas: Produk + Nominal Pengajuan).
     .venv\\Scripts\\python buat_origination.py --lanjut     # teruskan run yang gagal di tengah
     .venv\\Scripts\\python buat_origination.py --headless   # tanpa jendela browser
 
-Skenario Syariah ada di buat_origination_syariah.py; ia memakai alur di file ini dan hanya
-mengganti cara mengisi form fasilitas (main(isi_fasilitas=...)).
+Skenario Syariah (buat_origination_syariah.py) dan Konven + Syariah dalam satu pipeline
+(buat_origination_konven_syariah.py) memakai alur di file ini dan hanya mengganti pengisi form
+fasilitas (main(isi_fasilitas=...)).
 
 MEMBUAT DATA SUNGGUHAN di base_url (config.json): customer baru, pipeline, origination
 (FAS-xxxxx), dan dokumen.
@@ -79,6 +80,10 @@ def nama_customer_baru() -> str:
     return f'{random.choice(PERUSAHAAN)} Oto {kode}'
 
 
+# Diisi dari --nama; kosong = nama_customer_baru().
+NAMA_CUSTOMER = None
+
+
 def nominal_acak() -> str:
     """1–99 milyar dengan sisa jutaan supaya tidak selalu bulat."""
     return str(random.randint(1, 99) * 1_000_000_000 + random.randint(0, 899) * 1_000_000)
@@ -91,7 +96,7 @@ def nomor_dokumen_acak() -> str:
 # ============================================================================ fase 1–11
 
 def fase_buat_pipeline(los: Los):
-    customer = nama_customer_baru()
+    customer = NAMA_CUSTOMER or nama_customer_baru()
     log(f'  customer: {customer}')
 
     # 2. Loan Processing → Proposal Pengajuan → Pipeline
@@ -157,7 +162,13 @@ def fase_buat_pipeline(los: Los):
     los.konfirmasi_bila_ada(r'DATA MANDATORY', 'Ya', 3)
     los.sukses_lalu_tutup()
 
-    # 10. Fasilitas Pembiayaan → Add New → Create New → Confirm → isi → Save
+    # 10. Satu fasilitas per pengisi di ISI_FASILITAS
+    for isi in ISI_FASILITAS:
+        tambah_fasilitas(los, isi)
+
+
+def tambah_fasilitas(los: Los, isi):
+    """Fasilitas Pembiayaan → Add New → Create New → Confirm → isi → Save."""
     los.klik_xpath("//button[normalize-space()='Add New']")
     pemilih = los.tunggu_popup('Tambah Fasilitas Pembiayaan')
     los.d.execute_script('arguments[0].click()',
@@ -165,7 +176,7 @@ def fase_buat_pipeline(los: Los):
     los.klik_xpath(los.tombol('Confirm', pemilih), 15, induk=pemilih)
     form = los.tunggu_popup('Add New Fasilitas Pembiayaan', 30)
     los.buffering()
-    ISI_FASILITAS(los, form)
+    isi(los, form)
     los.klik_xpath(los.tombol('Save', form), 15, induk=form)
     los.sukses_lalu_tutup()
 
@@ -182,8 +193,8 @@ def isi_fasilitas_konven(los: Los, form):
     log(f'  fasilitas konven: {DATA["produk"]}, nominal {rupiah(nominal)}')
 
 
-# Cara mengisi form "Add New Fasilitas Pembiayaan". Diganti oleh skenario lain lewat main().
-ISI_FASILITAS = isi_fasilitas_konven
+# Pengisi form "Add New Fasilitas Pembiayaan", satu per fasilitas. Diganti skenario lain lewat main().
+ISI_FASILITAS = [isi_fasilitas_konven]
 
 
 def fase_submit_pipeline(los: Los):
@@ -463,16 +474,22 @@ def main(isi_fasilitas=isi_fasilitas_konven, skenario: str = 'Konven', berkas_je
     """
     Jalankan seluruh fase. Skenario lain cukup memberi `isi_fasilitas` sendiri dan berkas jejak
     terpisah, supaya --lanjut sebuah skenario tidak meneruskan run skenario lain.
+    `isi_fasilitas` boleh satu fungsi atau list fungsi (satu fasilitas per fungsi, berurutan).
     """
-    global ISI_FASILITAS, BERKAS_JEJAK
-    ISI_FASILITAS = isi_fasilitas
+    global ISI_FASILITAS, BERKAS_JEJAK, NAMA_CUSTOMER
+    ISI_FASILITAS = list(isi_fasilitas) if isinstance(isi_fasilitas, (list, tuple)) else [isi_fasilitas]
     BERKAS_JEJAK = FOLDER / berkas_jejak
 
     ap = argparse.ArgumentParser(description=f'Buat satu Origination ({skenario}) sampai Completed.')
     ap.add_argument('--lanjut', action='store_true', help='teruskan run sebelumnya (lewati fase yang sudah selesai)')
     ap.add_argument('--headless', action='store_true', help='jalankan tanpa jendela browser')
     ap.add_argument('--sampai', type=int, default=len(FASE), help='berhenti setelah fase ke-N (1-based)')
+    ap.add_argument('--nama', help='nama customer baru (bawaan: acak); dipakai buat_batch.py supaya unik')
+    ap.add_argument('--jejak', help=f'berkas jejak run (bawaan: {berkas_jejak})')
     arg = ap.parse_args()
+    NAMA_CUSTOMER = arg.nama
+    if arg.jejak:
+        BERKAS_JEJAK = FOLDER / arg.jejak
 
     if not arg.lanjut and BERKAS_JEJAK.exists():
         BERKAS_JEJAK.unlink()

@@ -4,7 +4,7 @@ Membuat satu Origination dari nol sampai berstatus **Completed**, dalam 12 fase 
 
 | Fase | Akun | Langkah |
 | --- | --- | --- |
-| 1 | Staff Bisnis | Customer baru (search "aku" → Create New Customer & Pipeline), data pipeline, fasilitas Dana Talangan |
+| 1 | Staff Bisnis | Customer baru (search "aku" → Create New Customer & Pipeline), data pipeline, fasilitas (Konven, Syariah, atau keduanya) |
 | 2 | Staff Bisnis | Submit pipeline, komentar "Bismillaah" (timeout server dicoba ulang; dilewati bila sudah ter-Submit) |
 | 3 | TL Bisnis | Approval List → Go to task → Approve |
 | 4 | Staff Bisnis | Go to task → Go To Origination (staff DEPI & DH, comment) |
@@ -55,9 +55,11 @@ Satu skenario = satu file. Opsi `--lanjut`, `--headless`, `--sampai` berlaku di 
 | --- | --- | --- |
 | `buat_origination.py` | Konven | `jejak.json` |
 | `buat_origination_syariah.py` | Syariah | `jejak_syariah.json` |
+| `buat_origination_konven_syariah.py` | Dua fasilitas dalam satu pipeline: Konven + Syariah | `jejak_konven_syariah.json` |
 
 ```powershell
 .venv\Scripts\python buat_origination_syariah.py
+.venv\Scripts\python buat_origination_konven_syariah.py
 ```
 
 Bedanya hanya di form **Add New Fasilitas Pembiayaan** (fase 1); fase lain sama persis, karena
@@ -79,7 +81,28 @@ generik: setiap field bertanda `*` yang masih kosong diisi nominal acak bila pun
 uang, selain itu `syariah.teks_objek`. Bila skema yang dipilih belum dimapping di lingkungan itu,
 run berhenti dengan pesan yang jelas.
 
-Skenario syariah **belum pernah dijalankan** terhadap server; skenario konven sudah.
+Skenario **Konven + Syariah** menambah dua fasilitas berturut-turut di fase 1 (Add New dua kali),
+memakai pengisi yang sama dengan kedua skenario di atas, jadi tidak ada kunci `config.json` baru.
+Konven diisi lebih dulu karena form fasilitas baru terisi segmen bawaan divisi user. Go To
+Origination tetap menghasilkan **satu** origination (`FAS-xxxxx`) per pipeline, jadi fase 2–12
+tidak berubah. `main(isi_fasilitas=...)` menerima satu fungsi atau list fungsi.
+
+Skenario syariah dan Konven + Syariah **belum pernah dijalankan** terhadap server; skenario konven sudah.
+
+## Banyak Origination sekaligus
+
+`buat_batch.py` menjalankan beberapa skenario berturut-turut (bawaan 2 Konven, 2 Syariah,
+6 Konven + Syariah; ubah di `KOMPOSISI`). Tiap run mendapat nama perusahaan dasar yang berbeda
+ditambah kode unik, dan jejaknya sendiri (`jejak_batch_NN.json`). Rencananya ada di `jejak_batch.json`.
+
+```powershell
+.venv\Scripts\python buat_batch.py --rencana   # lihat rencana (nama per run) tanpa menjalankan
+.venv\Scripts\python buat_batch.py             # jalankan; ulangi perintah ini untuk meneruskan setelah gagal
+.venv\Scripts\python buat_batch.py --baru      # buang rencana lama, buat nama-nama baru
+```
+
+Batch berhenti pada run pertama yang gagal. Menjalankan ulang melewati run yang sudah selesai dan
+meneruskan run yang gagal dengan `--lanjut`. Skrip tunggal juga menerima `--nama` dan `--jejak`.
 
 Bila gagal, screenshot dan HTML halaman disimpan di `artefak/`. Dalam mode berjendela, browser
 dibiarkan terbuka sampai Anda menekan Enter. Setelah penyebabnya beres, `--lanjut` meneruskan
