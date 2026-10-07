@@ -1,5 +1,6 @@
 """
-Helper Selenium untuk aplikasi NEW LOS (Next.js + MUI).
+Helper Selenium generik untuk aplikasi NEW LOS (Next.js + MUI). Tidak tahu apa pun tentang
+halaman tertentu — itu tugas pages/.
 
 Hal yang perlu diingat tentang DOM aplikasi ini:
 - Loader global adalah sebuah MuiDialog berisi spinner saja (src/components/shared/Loader).
@@ -12,8 +13,8 @@ Hal yang perlu diingat tentang DOM aplikasi ini:
 """
 import re
 import time
-from datetime import date
 from pathlib import Path
+from typing import TypeVar
 
 from selenium import webdriver
 from selenium.common.exceptions import (
@@ -25,48 +26,15 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.remote.webelement import WebElement
 
-FOLDER = Path(__file__).parent
-ARTEFAK = FOLDER / 'artefak'
+from .util import GagalLangkah, log, tampil, teks, xp_literal
 
-
-def log(pesan: str):
-    print(f'[{time.strftime("%H:%M:%S")}] {pesan}', flush=True)
-
-
-def hari_ini() -> str:
-    return date.today().strftime('%d/%m/%Y')
-
-
-class GagalLangkah(Exception):
-    """Kegagalan yang pesannya sudah cukup jelas untuk dibaca manusia."""
-
-
-def _teks(el: WebElement) -> str:
-    try:
-        return re.sub(r'\s+', ' ', el.text or '').strip()
-    except StaleElementReferenceException:
-        return ''
-
-
-def _tampil(el: WebElement) -> bool:
-    try:
-        return el.is_displayed()
-    except StaleElementReferenceException:
-        return False
-
-
-def xp_literal(s: str) -> str:
-    """String aman untuk XPath (menangani tanda kutip)."""
-    if "'" not in s:
-        return f"'{s}'"
-    if '"' not in s:
-        return f'"{s}"'
-    return "concat('" + s.replace("'", "',\"'\",'") + "')"
+H = TypeVar('H')
 
 
 class Los:
-    def __init__(self, base_url: str, headless: bool = False):
+    def __init__(self, base_url: str, folder_bukti: Path, headless: bool = False):
         self.base_url = base_url.rstrip('/')
+        self.folder_bukti = folder_bukti
         opsi = webdriver.ChromeOptions()
         if headless:
             opsi.add_argument('--headless=new')
@@ -75,6 +43,16 @@ class Los:
         opsi.add_experimental_option('excludeSwitches', ['enable-logging'])
         self.d = webdriver.Chrome(options=opsi)
         self.d.implicitly_wait(0)
+
+    # ------------------------------------------------------------------ page factory
+
+    def halaman(self, kelas: type[H], akar: WebElement | None = None) -> H:
+        """Buat Page Object `kelas` yang terikat ke browser ini (opsional: ke elemen `akar`)."""
+        return kelas(self, akar)
+
+    def modal(self, kelas: type[H], batas: float = 60, pola: str | None = None) -> H:
+        """Tunggu popup yang teksnya cocok dengan `pola` (bawaan: `kelas.POLA`), lalu bungkus jadi Page Object."""
+        return kelas(self, self.tunggu_popup(pola or kelas.POLA, batas))
 
     # ------------------------------------------------------------------ dasar
 
@@ -86,12 +64,12 @@ class Los:
 
     def simpan_bukti(self, nama: str):
         """Screenshot + HTML saat gagal, untuk dilihat sesudahnya."""
-        ARTEFAK.mkdir(exist_ok=True)
+        self.folder_bukti.mkdir(parents=True, exist_ok=True)
         cap = time.strftime('%Y%m%d-%H%M%S')
-        png = ARTEFAK / f'{cap}-{nama}.png'
+        png = self.folder_bukti / f'{cap}-{nama}.png'
         try:
             self.d.save_screenshot(str(png))
-            (ARTEFAK / f'{cap}-{nama}.html').write_text(self.d.page_source, encoding='utf-8')
+            (self.folder_bukti / f'{cap}-{nama}.html').write_text(self.d.page_source, encoding='utf-8')
         except WebDriverException:
             pass
         return png
@@ -111,7 +89,7 @@ class Los:
             time.sleep(jeda)
 
     def cari(self, xpath: str, induk=None) -> list[WebElement]:
-        return [e for e in (induk or self.d).find_elements(By.XPATH, xpath) if _tampil(e)]
+        return [e for e in (induk or self.d).find_elements(By.XPATH, xpath) if tampil(e)]
 
     def satu(self, xpath: str, batas: float = 60, induk=None, pesan: str = None) -> WebElement:
         return self.tunggu(lambda: (self.cari(xpath, induk) or [None])[0],
@@ -130,15 +108,15 @@ class Los:
         self.klik(el)
         return el
 
-    def ketik(self, el: WebElement, teks: str):
+    def ketik(self, el: WebElement, isi: str):
         self.klik(el)
         el.send_keys(Keys.CONTROL, 'a')
         el.send_keys(Keys.DELETE)
-        el.send_keys(teks)
+        el.send_keys(isi)
 
-    def tombol(self, teks: str, induk=None) -> str:
+    def tombol(self, label: str, induk=None) -> str:
         """XPath tombol dengan teks persis."""
-        return f".//button[normalize-space()={xp_literal(teks)}]" if induk else f"//button[normalize-space()={xp_literal(teks)}]"
+        return f".//button[normalize-space()={xp_literal(label)}]" if induk else f"//button[normalize-space()={xp_literal(label)}]"
 
     def buka(self, path: str):
         self.d.get(self.base_url + path)
@@ -146,6 +124,9 @@ class Los:
         if '/login' in self.d.current_url and not path.startswith('/login'):
             raise GagalLangkah('Terlempar ke halaman login — sesi habis?')
         self.buffering()
+
+    def url_berisi(self, *bagian: str) -> bool:
+        return any(b in self.d.current_url for b in bagian)
 
     # ------------------------------------------------------------------ menunggu
 
@@ -179,7 +160,7 @@ class Los:
     def popup(self, pola: str) -> WebElement | None:
         """Popup MUI yang tampil dan teksnya cocok dengan regex `pola` (paling atas bila bertumpuk)."""
         cocok = [p for p in self.d.find_elements(By.CSS_SELECTOR, '.MuiDialog-root')
-                 if _tampil(p) and re.search(pola, _teks(p), re.I)]
+                 if tampil(p) and re.search(pola, teks(p), re.I)]
         return cocok[-1] if cocok else None
 
     def tunggu_popup(self, pola: str, batas: float = 60) -> WebElement:
@@ -196,30 +177,30 @@ class Los:
                 return ok
             err = self.popup(r'Error!|Terjadi kesalahan')
             if err:
-                raise GagalLangkah(f'Aplikasi menampilkan error: {_teks(err)}')
+                raise GagalLangkah(f'Aplikasi menampilkan error: {teks(err)}')
             return None
 
         p = self.tunggu(cek, batas, f'popup sukses "{pola}" tidak muncul')
-        teks = _teks(p)
+        isi = teks(p)
         self.klik_xpath(self.tombol('Close', p), 15, induk=p)
-        self.tunggu(lambda: not _tampil(p), 20, 'popup sukses tidak tertutup')
+        self.tunggu(lambda: not tampil(p), 20, 'popup sukses tidak tertutup')
         self.buffering()
-        return teks
+        return isi
 
-    def konfirmasi_bila_ada(self, pola: str, teks_tombol: str, batas: float = 5) -> bool:
+    def konfirmasi_bila_ada(self, pola: str, label_tombol: str, batas: float = 5) -> bool:
         """Klik tombol di popup konfirmasi bila popup itu muncul dalam `batas` detik."""
         try:
             p = self.tunggu_popup(pola, batas)
         except GagalLangkah:
             return False
-        self.klik_xpath(self.tombol(teks_tombol, p), 15, induk=p)
+        self.klik_xpath(self.tombol(label_tombol, p), 15, induk=p)
         self.buffering()
         return True
 
     # ------------------------------------------------------------------ input
 
     def opsi(self, pola: str) -> list[WebElement]:
-        return [o for o in self.cari("//*[@role='option']") if re.search(pola, _teks(o), re.I)]
+        return [o for o in self.cari("//*[@role='option']") if re.search(pola, teks(o), re.I)]
 
     def klik_opsi(self, pola: str, pesan: str) -> str:
         """
@@ -229,10 +210,10 @@ class Los:
         Mengembalikan label opsi yang diklik.
         """
         def cari_lalu_klik():
-            o = next((x for x in self.opsi(pola) if _teks(x)), None)
+            o = next((x for x in self.opsi(pola) if teks(x)), None)
             if o is None:
                 return None
-            label = _teks(o)
+            label = teks(o)
             self.klik(o)
             return label
 
@@ -292,76 +273,3 @@ class Los:
         if netral:
             self.klik(netral[0])
         time.sleep(0.3)
-
-    # ------------------------------------------------------------------ sesi
-
-    def login(self, username: str):
-        log(f'Login sebagai {username}')
-        self.d.delete_all_cookies()
-        self.d.get(self.base_url + '/login')
-        kotak = self.satu("//input[@id='input-username']", 60)
-        self.ketik(kotak, username)
-        self.klik_xpath("//*[@id='login-button']")
-        try:
-            self.tunggu(lambda: '/login' not in self.d.current_url, 60, 'masih di halaman login')
-        except GagalLangkah:
-            pesan = ''
-            try:
-                alert = self.d.switch_to.alert
-                pesan = alert.text
-                alert.dismiss()
-            except WebDriverException:
-                pass
-            raise GagalLangkah(f'Login {username} gagal. {pesan or "Mungkin butuh sandi/OTP."}')
-        self.buffering()
-
-    def logout(self):
-        """Tombol header "Logout" → popup "Apakah anda yakin ingin keluar?" → Ya."""
-        try:
-            tombol = self.cari(self.tombol('Logout'))
-            if tombol:
-                self.klik(tombol[0])
-                self.konfirmasi_bila_ada(r'yakin ingin keluar', 'Ya', 10)
-                self.tunggu(lambda: '/login' in self.d.current_url, 30, 'tidak kembali ke halaman login')
-        except GagalLangkah:
-            pass
-        # Jaring pengaman: sesi berikutnya harus mulai bersih apa pun yang terjadi di atas.
-        self.d.delete_all_cookies()
-        log('Logout')
-
-    # ------------------------------------------------------------------ To Do List
-
-    def buka_tugas(self, customer: str, url_cadangan: str, batas: float = 150) -> bool:
-        """
-        Dashboard → To Do List / Approval List → Filter "Nama Customer" → Apply → "Go to task".
-
-        Daftarnya berisi ratusan tugas dan tidak diurutkan terbaru-dulu, jadi barisnya dicari
-        lewat filter. Tugas dibuat backend secara asinkron; bila belum muncul, dicoba ulang.
-        Setelah habis batas, jatuh ke URL cadangan supaya run tidak berhenti hanya karena
-        dashboard terlambat.
-        """
-        baris_xp = (f"//button[normalize-space()='Go to task']"
-                    f"/parent::*[*[normalize-space()={xp_literal(customer)}]]")
-        akhir = time.time() + batas
-        while time.time() < akhir:
-            self.buka('/')
-            self.satu("//*[normalize-space(text())='To Do List' or normalize-space(text())='Approval List']", 60)
-            # Tombol Filter pertama milik To Do List (yang kedua milik Inquiry Data).
-            self.klik_xpath("(//button[normalize-space()='Filter'])[1]", 30)
-            pop = self.satu("//*[contains(@class,'MuiPopover-root')]", 15)
-            self.ketik(self.satu(".//input[@placeholder='example: proses..']", 15, pop), customer)
-            self.klik_xpath(self.tombol('Apply', pop), 15, induk=pop)
-            self.buffering()
-            time.sleep(1.5)
-            baris = self.cari(baris_xp)
-            if baris:
-                self.klik(baris[0].find_element(By.XPATH, ".//button[normalize-space()='Go to task']"))
-                self.tunggu(lambda: self.d.current_url.rstrip('/') != self.base_url, 60, 'Go to task tidak berpindah halaman')
-                self.buffering()
-                log(f'  Go to task → {self.d.current_url.replace(self.base_url, "")}')
-                return True
-            log('  tugas belum muncul di dashboard, coba lagi 15 detik lagi')
-            time.sleep(15)
-        log(f'  tugas tidak ditemukan di dashboard, buka langsung {url_cadangan}')
-        self.buka(url_cadangan)
-        return False
